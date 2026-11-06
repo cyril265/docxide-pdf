@@ -171,12 +171,45 @@ Open queue from the large-corpus and focus-fixture rounds:
   both sides (`locl` glyphs; taiwanese_education 二、 sits 1pt left of ours);
   autoSpaceDE gaps are lost at run boundaries unless the runs merge
   (chinese_costume "5-10 分钟").
-- **0.25pt baseline grid**: Word quantizes baselines to 0.25pt online (0.24
-  local). Residuals it explains: greensboro (Arial 11pt at 1.5 lines: ours
-  18.97, Word 19.0), romanian_candidate_declaration (borders drift 0.1-0.3pt
-  per row, SSIM 91.5), case69 (last line 15.00 vs 14.83 under
-  `vAlign=center`), case33's list lines (16.115 vs 16.0),
-  uk_commercial page 11's notes block (0.67pt short).
+- **0.25pt baseline grid** (`grid_baseline` and `writer_stretched` in
+  `pdf/layout.rs`, fixtures line-grid and space-line-mark-font, Word for Mac
+  probes, about 17,000 lines): line tops stay exact; the baseline
+  is drawn on a 0.25pt grid from the page top (the rounded line box less the
+  rounded leading gives the text box, the baseline keeps its rounded descent
+  above that box, multiples only ever lower it from the rounded ascent,
+  at-least puts the leading above), and the PDF writer stretches the page by
+  one cell. A list label shares its first line's drawn baseline; w:vAlign
+  moves the body before the rounding (a first pass measures it, and a third
+  pass re-measures it when the live text of a body PAGE/NUMPAGES field moves
+  a vAligned page; the fields keep the first pass's numbers, as Word's do); a
+  picture taller than the text ascent rounds its line's baseline itself, and
+  Word draws the pictures unrounded and unstretched (their underline and
+  strike stay on the text's line). Open: Word underlines and strikes a
+  picture in an underlined or struck run (final view) as one line with the
+  text around it; we draw neither under the picture nor under the space
+  before it. Visual suite J +3.8 (cases),
+  +4.6 (scraped). Open: docGrid-snapped lines are only stretched, but Word
+  rounds them too: single-spaced Latin lines fit r(top) + r((r(cell) −
+  r(text line)) / 2) + r(ascent) on 162 probe lines (Arial, Times New Roman,
+  Calibri, pitches 15.6-20pt), which also shows our unrounded grid baseline
+  half the font's line gap low (Arial 0.18pt, Times New Roman 0.25pt);
+  SimSun fits it with its glyph box (no 1.3× leading), while multiples,
+  at-least lines and mixed Latin/East Asian lines on the grid do not yet.
+  A Symbol bullet steps Word's Arial 11 lines about 13.4pt, ours 12.65pt.
+  Table cells,
+  footnotes and textboxes are not on the grid yet (no page height or spacing
+  in their layout); x is left unstretched (stretching it moved pre-existing
+  1pt x errors across pixels); exact 1pt lines accumulate like 1/4096pt steps;
+  references from Word for Windows (toc-section-page-labels) follow another
+  grid, and Word's print path (Quartz, door_air_cooling_unit_spec) rounds
+  baselines to a 0.24pt (300 dpi) grid without the stretch. Exposed position errors of
+  0.05-0.9pt that now round a cell wrong (Jaccard points vs base):
+  dutch_government_budget_letter (−17.8, body tops 0.04-0.16pt low after its
+  floating tables), section-clear-mark-* (−9.9, +0.6pt before the body),
+  case2 (−5.4, Aptos ascent 0.3pt), polish_municipal_letter (−4.8, +0.7-0.9pt),
+  case8 (−3.7, a mixed Press Start 2P/Arial line's height),
+  repeated-clear-tab-two-no-tab (−3.0, +1.66pt), czech_municipal_grant_form
+  (−2.1).
 - **Mixed Latin/East Asian justification** (issue #142, Word online probes
   2026-10-28, `MixedJustify` in `pdf/layout.rs`): the slack spreads over every
   space and the gap after every East Asian character alike, each space +1/9

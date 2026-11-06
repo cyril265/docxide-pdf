@@ -1038,6 +1038,7 @@ pub(super) fn render_header_footer(
                     None,
                     None,
                     None,
+                    None,
                 );
                 // Frame paragraphs are out-of-flow: do not advance cursor_y
                 pi += 1;
@@ -1484,6 +1485,7 @@ pub(super) fn render_header_footer(
                                     None,
                                     None,
                                     None,
+                                    None,
                                 );
                                 tb_cursor -= tp.space_before
                                     + (tb_lines.len() as f32) * tb_line_h
@@ -1884,6 +1886,14 @@ pub(super) fn render_header_footer(
                     None,
                     None,
                     None,
+                    Some(super::layout::LineGrid::new(
+                        sp.page_height,
+                        cursor_y - baseline_y,
+                        effective_ls,
+                        line_h,
+                        font_size * tallest_lhr.unwrap_or(1.2),
+                        metrics.0,
+                    )),
                 );
 
                 let trailing_descent = if wrapped_pictures {

@@ -641,6 +641,7 @@ fn render_cell_content(
                     Some(&mut ctx.cell_comment_anchors.borrow_mut()),
                     None,
                     cell_link_tagger(&mut tagger, cell_para),
+                    None,
                 );
                 if picture_clip {
                     content.restore_state();
@@ -1292,6 +1293,7 @@ fn render_partial_cell_content(
                     Some(&mut ctx.cell_comment_anchors.borrow_mut()),
                     None,
                     cell_link_tagger(&mut tagger, cell_para),
+                    None,
                 );
                 if picture_clip {
                     content.restore_state();
@@ -1949,6 +1951,9 @@ pub(super) fn render_table(
                 // The preceding wide float blocks the anchor paragraph too.
                 // Keep the relocated anchor rather than restoring it above both
                 // tables; otherwise a later clearing break loses occupied lines.
+                // The table keeps its tblpY below the moved anchor (Word for Mac
+                // probes: tblpY 1, 100 and 300 under a full-width float).
+                fp.y -= fp.v_offset_pt;
                 displaced_text_anchor = Some(fp.y + fp.v_offset_pt);
             }
             if let Some(pos) = table.position.as_ref() {

@@ -1284,7 +1284,8 @@ pub(super) fn compute_row_layouts(
     let mut layouts: Vec<RowLayout> = table
         .rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(ri, row)| {
             let mut max_h: f32 = 0.0;
             let row_keeps_next = row.cells.iter().flat_map(|cell| &cell.content)
                 .any(|block| matches!(block, Block::Paragraph(p) if p.keep_next));
@@ -2090,10 +2091,22 @@ pub(super) fn compute_row_layouts(
             // border-to-border pitch (case15: 36.0).
             // The cells' top and bottom margins sit on top of it too, like the
             // bands in their insets: a 30pt row with 5pt margins is 40.5 in
-            // Word, and polish_ministry's 33.15pt rows with 1.4pt ones 36.25.
+            // Word, and 33.15pt rows with 1.4pt margins are 36.25pt.
+            // A merged cell's bottom border closes its last row, not this one
+            // (a 1.5pt double bottom under a cell spanning two rows leaves
+            // the first row at its 28.35pt trHeight).
             let insets = cells
                 .iter()
-                .map(|c| c.cm.top + c.cm.bottom)
+                .zip(row.grid_cells())
+                .map(|(l, (grid_col, _, c))| {
+                    let continues = c.v_merge == VMerge::Restart
+                        && table.rows.get(ri + 1).is_some_and(|next| {
+                            next.grid_cells()
+                                .any(|(col, _, n)| col == grid_col && n.v_merge == VMerge::Continue)
+                        });
+                    let band = if continues { c.borders.bottom.band() / 2.0 } else { 0.0 };
+                    l.cm.top + l.cm.bottom - band
+                })
                 .fold(0.0f32, f32::max);
             let height = match (row.height, row.height_exact) {
                 // An exact one gains only the bottom margin: 30pt with 5pt

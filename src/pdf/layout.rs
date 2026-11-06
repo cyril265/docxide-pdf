@@ -1129,6 +1129,10 @@ pub(super) struct TextLine {
     /// How far this line's baseline sits below where the paragraph ascent
     /// would put it (negative: above), for lines with their own `pitch`.
     pub(super) ascent_shift: f32,
+    /// The glyph box of a line with its own `pitch` under a multiple above
+    /// single: its runs' highest ascent to their deepest descent, without the
+    /// leading.
+    pub(super) text_box: Option<f32>,
 }
 
 impl TextLine {
@@ -1164,6 +1168,15 @@ pub(super) fn size_lines_by_own_runs(
         .map(|(_, e)| e)
         .collect();
     for line in lines.iter_mut() {
+        if top_aligned {
+            for c in line.chunks.iter_mut().filter(|c| c.math.is_none() && c.raise != 0.0) {
+                let drop = by_pdf_name
+                    .get(c.pdf_font.as_str())
+                    .map_or((-c.raise).max(0.0), |e| top_aligned_drop(e, c.line_font_size, c.raise));
+                c.y_offset -= c.raise + drop;
+                c.raise = -drop;
+            }
+        }
         if line.leading_space_wrap || line.leading_tab_wrap {
             if let Some(fs) = line.break_font_size {
                 line.pitch = Some(super::resolve_line_h(line_spacing, fs, line.break_lhr));
@@ -1178,9 +1191,11 @@ pub(super) fn size_lines_by_own_runs(
         // almost no descent, so the 12pt Arial beside it sets the bottom.
         // Math faces never size a line (their operator metrics are huge).
         let (mut ascent, mut below, mut sized) = (0.0f32, 0.0f32, false);
+        let mut single = 0.0f32;
         for mb in line.chunks.iter().filter_map(|c| c.math.as_ref()) {
             ascent = ascent.max(mb.line_ascent);
             below = below.max(mb.line_descent);
+            single = single.max(mb.line_ascent + mb.line_descent);
             sized = true;
         }
         for c in line
@@ -1211,12 +1226,14 @@ pub(super) fn size_lines_by_own_runs(
             // Position shifts both edges. A wholly raised line can lose its
             // descent before growing taller; an unshifted run alongside it
             // retains that descent. Do not stretch both sides independently.
-            if let Some(ruby) = &c.ruby {
-                ascent = ascent.max(ruby.raise + ruby.font_size * ar);
-            }
+            let ruby_top = c.ruby.as_ref().map_or(0.0, |r| r.raise + r.font_size * ar);
+            ascent = ascent.max(ruby_top);
+            single = single.max(
+                c.line_font_size * lhr + 2.0 * pad + (ruby_top - c.line_font_size * ar).max(0.0),
+            );
             if top_aligned {
                 ascent = ascent.max(c.line_font_size * ar + pad);
-                below = below.max(c.line_font_size * (lhr - ar).max(0.0) + pad + top_aligned_drop(entry, c.line_font_size, c.raise));
+                below = below.max(c.line_font_size * (lhr - ar).max(0.0) + pad - c.raise);
             } else {
                 ascent = ascent.max((c.line_font_size * ar + pad + c.raise).max(0.0));
                 below = below.max((c.line_font_size * (lhr - ar).max(0.0) + pad - c.raise).max(0.0));
@@ -1227,14 +1244,24 @@ pub(super) fn size_lines_by_own_runs(
             continue;
         }
         let (above_extra, below_extra) = math_line_stretch(line, ascent, below, line_spacing);
-        let pitch = super::helpers::resolve_line_h(line_spacing, 1.0, Some(ascent + below))
-            + above_extra
-            + below_extra;
+        // A multiple adds (or takes) its leading once, as much as the tallest
+        // run's own single line would get: the highest ascent and the deepest
+        // descent can come from different runs (Word for Mac probes: 12pt
+        // Verdana beside 12pt Courier New steps 15.67 at single, 14.21 at 0.9,
+        // 17.86 at 1.15 and 30.25 at 2 lines; 15.67 + (m − 1) × 14.58).
+        let natural = match line_spacing {
+            LineSpacing::Auto(m) => ascent + below + (m - 1.0) * single,
+            _ => super::helpers::resolve_line_h(line_spacing, 1.0, Some(ascent + below)),
+        };
+        let pitch = natural + above_extra + below_extra;
         if (pitch - para_pitch).abs() > 0.01
             || (line.chunks.iter().any(|c| c.raise != 0.0) && (ascent - para_ascent).abs() > 0.01)
         {
             line.pitch = Some(pitch);
-            line.ascent_shift = ascent + above_extra - para_ascent;
+            line.ascent_shift = (ascent - para_ascent) * super::helpers::auto_ascent_scale(line_spacing)
+                + above_extra;
+            line.text_box = matches!(line_spacing, LineSpacing::Auto(m) if m > 1.0)
+                .then_some(ascent + below + above_extra + below_extra);
         }
     }
 }
@@ -1265,13 +1292,16 @@ fn with_fallback_faces(
     (asc + desc, asc)
 }
 
-/// How far a run moved by `raise` stretches a `w:textAlignment="top"` line
-/// below. Word hangs the glyphs from the line top there, so the external
-/// leading sits under them and absorbs a drop first; raising never grows the
-/// line. Probes (2026-10-22, online export) of Calibri, Arial and Times New
-/// Roman at 11 and 24pt lowered 0.5-7pt: growth = drop − leading, ≥ 0.
+/// How far a run moved by `raise` sits, and stretches a
+/// `w:textAlignment="top"` line, below. Word hangs the glyphs from the line
+/// top there, so the external leading and one font unit sit under them and
+/// absorb a drop first; a raised run stays put (Word for Mac probes: Arial,
+/// Calibri and Times New Roman 11pt at position -8 to +2 draw 2pt lowered
+/// Arial 1.64pt down, raised text where unraised text is). Probes (2026-10-22, online export) of Calibri, Arial
+/// and Times New Roman at 11 and 24pt lowered 0.5-7pt: growth = drop −
+/// leading, ≥ 0; Word for Mac probes 2026-11-06: one unit less again.
 pub(super) fn top_aligned_drop(entry: &FontEntry, size: f32, raise: f32) -> f32 {
-    (-raise - size * entry.leading_ratio.unwrap_or(0.0)).max(0.0)
+    (-raise - size * entry.drop_slack_ratio.unwrap_or(0.0)).max(0.0)
 }
 
 /// How far a line's math boxes reach past its text box (`ascent` above,
@@ -4135,6 +4165,152 @@ pub(super) fn runs_max_image_h(runs: &[Run]) -> f32 {
         .fold(0.0f32, f32::max)
 }
 
+/// A paragraph's text line box, for drawing its baselines on Word's grid.
+#[derive(Clone, Copy)]
+pub(super) struct LineGrid {
+    /// PDF y of the page top, where the grid starts.
+    pub page_height: f32,
+    /// Line top to first baseline.
+    pub ascent: f32,
+    /// The text box: one line of the paragraph's font before line spacing
+    /// adds leading to it (the whole line for exact and shrunk spacing).
+    pub natural: f32,
+    pub line_pitch: f32,
+    pub text_ascent: f32,
+    /// At-least spacing puts its leading above the text, multiples below.
+    pub leading_above: bool,
+    /// Lines snapped to the document grid: only the writer's stretch.
+    pub snapped: bool,
+    /// How far the section's vertical alignment moves the page body down.
+    pub shift: f32,
+}
+
+impl LineGrid {
+    /// `text_h` is one line of the paragraph's font at single spacing.
+    pub(super) fn new(
+        page_height: f32,
+        ascent: f32,
+        ls: LineSpacing,
+        line_h: f32,
+        text_h: f32,
+        text_ascent: f32,
+    ) -> Self {
+        let natural = match ls {
+            LineSpacing::Exact(_) => line_h,
+            LineSpacing::Auto(m) if m < 1.0 => line_h,
+            _ => text_h.min(line_h),
+        };
+        LineGrid {
+            page_height,
+            ascent,
+            natural,
+            line_pitch: line_h,
+            text_ascent,
+            leading_above: matches!(ls, LineSpacing::AtLeast(_)),
+            snapped: false,
+            shift: 0.0,
+        }
+    }
+
+    /// The PDF y a line laid out with its baseline at `y` is drawn at. A
+    /// picture taller than the text ascent rounds the baseline itself, a
+    /// smaller one leaves the line to the text (Word for Mac probes: 1-45pt
+    /// pictures in Arial 11 and Times New Roman 12 lines). Vertical alignment
+    /// moves the line before Word rounds and stretches it; `y` and the result
+    /// are before that move.
+    pub(super) fn drawn_baseline(self, y: f32, line: Option<&TextLine>) -> f32 {
+        let below_top = self.page_height + self.shift - y;
+        let baseline = match line {
+            _ if self.snapped => below_top,
+            Some(l) if inline_image_line_extra(l, self.text_ascent) > 0.0 => {
+                to_grid(below_top as f64) as f32
+            }
+            _ => {
+                let ascent = self.ascent + line.map_or(0.0, |l| l.ascent_shift);
+                let advance = line.and_then(|l| l.pitch).unwrap_or(self.line_pitch);
+                let natural = if let Some(text_box) = line.and_then(|l| l.text_box) {
+                    text_box
+                } else if !self.leading_above {
+                    self.natural * advance / self.line_pitch
+                } else if advance > self.line_pitch {
+                    advance
+                } else {
+                    self.natural
+                };
+                let top = below_top - ascent;
+                grid_baseline(top, ascent, natural, advance, self.leading_above)
+            }
+        };
+        self.page_height + self.shift - writer_stretched(baseline, self.page_height)
+    }
+}
+
+pub(super) fn baseline_drop(line: &TextLine, ascent: f32) -> f32 {
+    line.ascent_shift + inline_image_line_extra(line, ascent)
+}
+
+/// Where the first line's baseline is drawn, which its list label shares.
+pub(super) fn first_drawn_baseline(
+    first_baseline_y: f32,
+    lines: &[TextLine],
+    text_ascent: f32,
+    grid: Option<LineGrid>,
+) -> f32 {
+    let first = lines.first();
+    let y = first_baseline_y - first.map_or(0.0, |l| baseline_drop(l, text_ascent));
+    grid.map_or(y, |g| g.drawn_baseline(y, first))
+}
+
+fn to_grid(v: f64) -> f64 {
+    (v * 4.0 + 0.5).floor() / 4.0
+}
+
+/// Where Word draws a baseline, in points below the page top. Word keeps
+/// line tops exact but draws on a 288 dpi grid (0.25pt) from the page top:
+/// the line's box runs from its rounded top to its rounded bottom (`advance`
+/// below the top), the rounded leading comes off it and the text box gets
+/// the rest. A text box rounded up keeps the rounded descent above its foot,
+/// one rounded down loses half the difference above the baseline. A line box
+/// a cell longer than its rounding keeps the baseline at its top, one a cell
+/// shorter at its bottom. Leading below the text (multiples above single)
+/// only ever lowers the baseline from its rounded ascent: the text box may
+/// spill into it (Word for Mac probes, fixture line-grid: Arial, Times New
+/// Roman, Calibri and Verdana 6-24pt at single, 0.9 to 2 lines, at-least and
+/// exact spacing, top margins in twip steps).
+pub(super) fn grid_baseline(
+    top: f32,
+    ascent: f32,
+    natural: f32,
+    advance: f32,
+    leading_above: bool,
+) -> f32 {
+    let r = to_grid;
+    let (top, a, nat, adv) = (top as f64, ascent as f64, natural as f64, advance as f64);
+    let lead = (adv - nat).max(0.0);
+    let text_box = r(adv) - r(lead);
+    if !leading_above && lead > 0.001 {
+        return (r(top) + r(a + (text_box - nat).max(0.0))) as f32;
+    }
+    let a = if leading_above { a - lead } else { a };
+    let o = r(lead)
+        + if text_box >= nat {
+            r(text_box - (nat - a))
+        } else {
+            r(a - (nat - text_box) / 2.0)
+        };
+    (r(top) + o).min(r(top + adv) - (r(adv) - o)) as f32
+}
+
+/// How far below the page top Word's PDF writer puts what the layout drew
+/// `y` below it: it stretches the page by one grid cell (0.25pt) over its
+/// height, the page first rounded to the grid (A4's 841.9pt box is 842), so a
+/// line 700pt down an A4 page lands 0.21pt lower (Word for Mac probes, fixture
+/// line-grid: 1pt lines down pages 500-1000pt tall).
+pub(super) fn writer_stretched(y: f32, page_height: f32) -> f32 {
+    let page = (page_height * 4.0).round() / 4.0;
+    y * page / (page - 0.25)
+}
+
 /// How far an inline picture lowers its line's baseline. Word sits the picture on
 /// the baseline, so a picture taller than the paragraph's text ascent pushes the
 /// baseline down by the difference. `ascent` is the paragraph's baseline offset
@@ -4265,6 +4441,7 @@ pub(super) fn render_paragraph_lines(
     mut comment_anchors: Option<&mut Vec<(u32, f32, f32, f32)>>,
     mut line_numbering: Option<LineNumberArg<'_>>,
     mut link_tags: Option<LinkTagger<'_>>,
+    line_grid: Option<LineGrid>,
 ) {
     let mut current_color: Option<[u8; 3]> = None;
     let mut pattern_fill_active = false;
@@ -4284,8 +4461,7 @@ pub(super) fn render_paragraph_lines(
     let mut line_y_offsets: Vec<f32> = Vec::with_capacity(lines.len());
     let mut line_top = 0.0f32;
     for line in lines {
-        line_y_offsets
-            .push(line_top + line.ascent_shift + inline_image_line_extra(line, text_metrics.0));
+        line_y_offsets.push(line_top + baseline_drop(line, text_metrics.0));
         line_top += inline_line_advance(line, line_pitch, text_metrics);
     }
 
@@ -4294,7 +4470,8 @@ pub(super) fn render_paragraph_lines(
     // `float_skip` lines.
     let first_content_idx = lines.iter().take_while(|l| l.float_skip).count();
     for (line_num, line) in lines.iter().enumerate() {
-        let y = first_baseline_y - line_y_offsets[line_num];
+        let raw_y = first_baseline_y - line_y_offsets[line_num];
+        let y = line_grid.map_or(raw_y, |g| g.drawn_baseline(raw_y, Some(line)));
         let global_line_idx = first_line_index + line_num;
         // Markup view: a revised line's change bar spans its line box, the
         // ascent above the baseline and the rest of the advance below (Word
@@ -5206,7 +5383,9 @@ pub(super) fn render_paragraph_lines(
         }
 
         // Draw inline images outside text block. Every inline picture sits on the
-        // baseline (see inline_image_line_extra), whatever its height.
+        // baseline (see inline_image_line_extra), whatever its height, as laid
+        // out: Word draws pictures off the text's grid and unstretched (Word for
+        // Mac probes: 1-45pt pictures down an A4 page).
         for (chunk_idx, chunk) in line.chunks.iter().enumerate() {
             if let Some(ref img_name) = chunk.inline_image_name {
                 if let Some(lt) = link_tags.as_mut() {
@@ -5217,7 +5396,7 @@ pub(super) fn render_paragraph_lines(
                     );
                 }
                 let box_x = chunk_abs_x(chunk_idx, chunk);
-                let box_bottom = y + chunk.y_offset;
+                let box_bottom = raw_y + chunk.y_offset;
 
                 // The chunk box is the rotated frame's bounding box; draw the picture at
                 // its natural size centred in it, turned about that centre like Word.
@@ -5700,12 +5879,13 @@ mod tests {
 
     #[test]
     fn top_aligned_drop_spends_external_leading_first() {
-        // Times New Roman's leading is 87/2048 em; Calibri has none.
-        let tnr = FontEntry { leading_ratio: Some(87.0 / 2048.0), ..FontEntry::stub() };
-        let calibri = FontEntry { leading_ratio: Some(0.0), ..FontEntry::stub() };
+        // Times New Roman's leading is 87/2048 em; Calibri has none. Both
+        // keep one more font unit.
+        let tnr = FontEntry { drop_slack_ratio: Some(88.0 / 2048.0), ..FontEntry::stub() };
+        let calibri = FontEntry { drop_slack_ratio: Some(1.0 / 2048.0), ..FontEntry::stub() };
         assert!(top_aligned_drop(&tnr, 11.0, -0.5) < 0.05);
-        assert!((top_aligned_drop(&tnr, 24.0, -7.0) - 5.98).abs() < 0.01);
-        assert_eq!(top_aligned_drop(&calibri, 11.0, -0.5), 0.5);
+        assert!((top_aligned_drop(&tnr, 24.0, -7.0) - 5.97).abs() < 0.01);
+        assert!((top_aligned_drop(&calibri, 11.0, -0.5) - 0.4946).abs() < 0.001);
         assert_eq!(top_aligned_drop(&calibri, 11.0, 7.0), 0.0);
     }
 

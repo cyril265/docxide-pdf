@@ -685,6 +685,7 @@ pub(super) fn render_textbox_paragraphs(
             tag.as_mut()
                 .zip(para_tag)
                 .map(|((tags, page, _), p)| LinkTagger::new(tags, *page, p)),
+            None,
         );
         if para_tag.is_some() {
             Tags::end(content);

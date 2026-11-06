@@ -1,7 +1,7 @@
 use pdf_writer::Content;
 
 use crate::model::{
-    Alignment, HorizontalRule, LineSpacing, Paragraph, ParagraphBorder, ParagraphBorders, Run,
+    Alignment, HorizontalRule, LineSpacing, Paragraph, ParagraphBorder, ParagraphBorders,
 };
 
 use super::color::fill_rgb;
@@ -162,17 +162,6 @@ pub(super) fn joins_border_group(a: &Paragraph, b: &Paragraph) -> bool {
     borders_match(&a.borders, &b.borders)
         && same(box_start(a), box_start(b))
         && same(end_indent(a), end_indent(b))
-}
-
-/// The paragraph's runs and those of the paragraphs in its textboxes, at any depth.
-pub(super) fn para_runs_with_textboxes(para: &Paragraph) -> Vec<&Run> {
-    let mut out: Vec<&Run> = para.runs.iter().collect();
-    for tb in &para.textboxes {
-        for tp in tb.content() {
-            out.extend(para_runs_with_textboxes(tp));
-        }
-    }
-    out
 }
 
 /// The paragraph and the paragraphs of its textboxes, at any depth.
