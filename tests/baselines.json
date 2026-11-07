@@ -3398,6 +3398,11 @@
     "a11y_struct": 1.0,
     "a11y_text": 1.0
   },
+  "cases/clear-break-mark-line": {
+    "jaccard": 0.8842,
+    "ssim": 0.9721,
+    "text_boundary": 1.0
+  },
   "cases/connector-paragraph-anchor-0": {
     "jaccard": 0.8481,
     "ssim": 0.9093,
@@ -4358,6 +4363,11 @@
     "a11y_struct": 0.5,
     "a11y_text": 1.0
   },
+  "cases/float-table-page-offset": {
+    "jaccard": 0.9136,
+    "ssim": 0.9914,
+    "text_boundary": 1.0
+  },
   "cases/frame-float-clearance-f0-y400-h400": {
     "jaccard": 0.6638,
     "ssim": 0.9416,
@@ -5050,6 +5060,11 @@
     "a11y_struct": 1.0,
     "a11y_text": 1.0
   },
+  "cases/inline-picture-twips": {
+    "jaccard": 0.9959,
+    "ssim": 0.9994,
+    "text_boundary": 1.0
+  },
   "cases/inline-shape-alternate0-hide0-height12.25": {
     "jaccard": 0.801,
     "ssim": 0.9955,
@@ -5460,6 +5475,11 @@
     "a11y_struct": 0.6154,
     "a11y_text": 1.0
   },
+  "cases/line-grid": {
+    "jaccard": 0.9542,
+    "ssim": 0.985,
+    "text_boundary": 1.0
+  },
   "cases/line_numbering_restart": {
     "jaccard": 0.8232,
     "ssim": 0.9882,
@@ -5659,6 +5679,16 @@
     "ua_deficit": 0,
     "a11y_struct": 1.0,
     "a11y_text": 1.0
+  },
+  "cases/mixed-line-baseline": {
+    "jaccard": 0.9553,
+    "ssim": 0.9827,
+    "text_boundary": 1.0
+  },
+  "cases/mixed-line-leading": {
+    "jaccard": 0.9532,
+    "ssim": 0.9743,
+    "text_boundary": 1.0
   },
   "cases/modern-oversized-lines5-cant1-prefix0": {
     "jaccard": 0.9241,
@@ -7837,6 +7867,11 @@
     "a11y_struct": 0.5455,
     "a11y_text": 1.0
   },
+  "cases/space-line-mark-font": {
+    "jaccard": 0.973,
+    "ssim": 0.9947,
+    "text_boundary": 1.0
+  },
   "cases/space-only-frame": {
     "jaccard": 0.3119,
     "ssim": 0.5157,
@@ -8337,6 +8372,11 @@
     "a11y_struct": 0.4706,
     "a11y_text": 0.3122
   },
+  "cases/top-aligned-lowered-run": {
+    "jaccard": 0.8273,
+    "ssim": 0.9968,
+    "text_boundary": 1.0
+  },
   "cases/torture_test": {
     "jaccard": 0.7877,
     "ssim": 0.9188,
@@ -8560,6 +8600,11 @@
     "ua_deficit": 0,
     "a11y_struct": 1.0,
     "a11y_text": 1.0
+  },
+  "cases/vmerge-bottom-border-row": {
+    "jaccard": 0.7996,
+    "ssim": 0.9802,
+    "text_boundary": 1.0
   },
   "cases/vml-front-rule-over-background": {
     "jaccard": 0.9337,
